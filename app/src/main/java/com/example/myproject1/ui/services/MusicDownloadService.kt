@@ -1,5 +1,6 @@
 package com.example.myproject1.ui.services
 
+import android.annotation.SuppressLint
 import android.app.*
 import android.content.Context
 import android.content.Intent
@@ -9,70 +10,69 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import androidx.core.app.TaskStackBuilder
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
+import androidx.lifecycle.asLiveData
+import com.example.myproject1.MainActivity
 import com.example.myproject1.R
-import com.example.myproject1.ui.home.HomeFragment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 
 private const val MSG_SAY_PLAY = 111
 private const val MSG_SAY_Pause = 112
 private const val MSG_SAY_STOP = 113
 
 class MusicDownloadService : Service() {
-    private val CHANNEL_ID: String = "com.example.myproject1.channelExample1"
-    private val NOTIFICATION_ID = 101
+    private var id = "channelID"
+    private var name = "channelName"
 
     private var mediaPlayer: MediaPlayer? = null
     private lateinit var messenger: Messenger
-
-    var liveData: LiveData<Int> = MutableLiveData()
+    private lateinit var notificationManager: NotificationManagerCompat
+    private lateinit var notification: Notification
 
     override fun onCreate() {
         Log.d(MusicDownloadService::class.java.name, "onCreate")
         super.onCreate()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(MusicDownloadService::class.java.name, "onStartCommand")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "Notification Title"
-            val descText = "Notification Description"
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
-                description =descText
-            }
-            val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(id, name, NotificationManager.IMPORTANCE_DEFAULT)
+            // val channel = NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManager.IMPORTANCE_DEFAULT).build()
+            notificationManager = NotificationManagerCompat.from(this)
             notificationManager.createNotificationChannel(channel)
         }
 
-        val notify = Intent(this, HomeFragment::class.java)
-        val pendingIntent: PendingIntent = PendingIntent.getActivities(this, 0, arrayOf(notify), 0)
-        val builder: NotificationCompat.Builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notify = Intent(this, MainActivity::class.java)
+        Log.d(MusicDownloadService::class.java.name, "notify : $notify")
+        Log.d(MusicDownloadService::class.java.name, "intent : $intent")
+        val pendingIntent: PendingIntent? = TaskStackBuilder.create(this).run {
+            addNextIntentWithParentStack(notify)
+            getPendingIntent(0, PendingIntent.FLAG_UPDATE_CURRENT)
+        }
+
+        notification = NotificationCompat.Builder(this, id)
             .setSmallIcon(R.drawable.ic_launcher_background)
             .setContentTitle("Example Title")
             .setContentText("Example Content")
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
 
-        with(NotificationManagerCompat.from(this)) {
-            builder.build().let {
-                startForeground(1, it)
-                notify(NOTIFICATION_ID, it)
-            }
-        }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(MusicDownloadService::class.java.name, "onStartCommand")
-
-
-
-        return START_NOT_STICKY
-    }
-
-    override fun onStart(intent: Intent?, startId: Int) {
-        Log.d(MusicDownloadService::class.java.name, "onStart")
-        super.onStart(intent, startId)
+        startForeground(1, notification)
+        return START_STICKY
     }
 
     override fun onDestroy() {
         Log.d(MusicDownloadService::class.java.name, "onDestroy")
+        stopForeground(true)
         super.onDestroy()
     }
 
@@ -82,7 +82,17 @@ class MusicDownloadService : Service() {
         return messenger.binder
     }
 
-    inner class IncomingHandler(context: Context, private val applicationContext: Context = context.applicationContext) : Handler() {
+    override fun onUnbind(intent: Intent?): Boolean {
+        Log.d(MusicDownloadService::class.java.name, "UnBind")
+        return true
+    }
+
+
+    @SuppressLint("HandlerLeak")
+    inner class IncomingHandler(
+        context: Context,
+        private val applicationContext: Context = context.applicationContext
+    ) : Handler(Looper.myLooper()!!) {
         override fun handleMessage(msg: Message) {
             when(msg.what) {
                 MSG_SAY_PLAY -> {
@@ -93,6 +103,7 @@ class MusicDownloadService : Service() {
                     Log.d(MusicDownloadService::class.java.name,
                         mediaPlayer!!.currentPosition.toString()
                     )
+
                 }
 
                 MSG_SAY_Pause -> {
@@ -116,3 +127,4 @@ class MusicDownloadService : Service() {
         }
     }
 }
+
